@@ -134,18 +134,20 @@ function ATC:INSPECT_ACHIEVEMENT_READY(guid)
             query.currentTimeout:Cancel()
             query.currentTimeout = nil
         end
+
+        local name = GetUnitName(unit, true)
+
         ATC:Debug("INSPECT_ACHIEVEMENT_READY GetAchievementComparisonInfo")
         local isCompleted, _, _, _  = GetAchievementComparisonInfo(query.currentAchievementID)
-        ATC:Debug(string.format("GetAchievementComparisonInfo unit:%s, id:%d result:%s", unit, 
+        ATC:Debug(string.format("GetAchievementComparisonInfo unit:%s, name:%s id:%d result:%s", unit, name,
             query.currentAchievementID, tostring(isCompleted)))
+
         if not isCompleted then
-            local name = GetUnitName(unit, true)
             query:AddMissingPlayer(name)
         else
-            ATC:Debug("INSPECT_ACHIEVEMENT_READY cc")
-            query:AddCompletePlayer()
+            query:AddCompletePlayer(name)
         end
-        ATC:Debug("INSPECT_ACHIEVEMENT_READY dd")
+        
         query.currentUnit = nil
         self:StartNextQuery()
     else
@@ -178,11 +180,13 @@ function ATC:QueryTeamAchievement(achievementID, achievementName)
     query.totalMembers = numGroupMembers
     
     -- 检查自己
+
     local selfCompleted = select(13, GetAchievementInfo(achievementID))
+
     if not selfCompleted then
         query:AddMissingPlayer(GetUnitName("player", true))
     else
-        query:AddCompletePlayer()
+        query:AddCompletePlayer(GetUnitName("player", true))
     end
     
     -- 构建待查询列表
@@ -227,9 +231,11 @@ function ATC:StartNextQuery()
     query.currentUnit = unit
     
     -- 设置成就比较单位
-    ATC:Debug("StartNextQuery SetAchievementComparisonUnit")
-    local success = SetAchievementComparisonUnit(unit)
-    ATC:Debug(string.format("SetAchievementComparisonUnit unit:%s res:%s", unit, tostring(success)))
+    local success = false
+    if UnitIsConnected(unit) then 
+        success = SetAchievementComparisonUnit(unit)
+        ATC:Debug(string.format("SetAchievementComparisonUnit unit:%s res:%s", unit, tostring(success)))
+    end
     
     if success then
         -- 为当前查询设置单独的超时（3秒）
@@ -275,11 +281,13 @@ function ATC:ReportResults(isTimeout)
     query.currentUnit = nil
 
     local message, messageExt
+
+    local achievementName = ATC:AchievementNameFilter(query.currentAchievementName)
     if query.missingCount == 0 then
-        message = string.format("果然[%s(%d)]这么简单的成就，大家都完成了。", query.currentAchievementName, query.currentAchievementID)
+        message = string.format("果然[%s(%d)]这么简单的成就，大家都完成了。", achievementName, query.currentAchievementID)
     else
         message = string.format("怎么会还有人没有[%s(%d)]? %d/%d 人未完成。", 
-                query.currentAchievementName, query.currentAchievementID, query.missingCount, query.totalMembers)
+                achievementName, query.currentAchievementID, query.missingCount, query.totalMembers)
     end
     if query.failedCount > 0 then 
         message = message .. string.format(" (%d人不在查询范围)", query.failedCount)
@@ -336,22 +344,28 @@ function ATC:CreateQueryState(achievementID, achievementName)
         AddMissingPlayer = function(self, playerName)
             table.insert(self.missingNames, playerName)
             self.missingCount = self.missingCount + 1
-            ATC:Debug("Player %s 未完成")
+            ATC:Debug(playerName .. " 未完成")
         end,
         
         -- 添加完成玩家
         AddCompletePlayer = function(self, playerName)
             self.completeCount = self.completeCount + 1
-            ATC:Debug("Player %s 查询失败")
+            ATC:Debug(playerName .. "查询失败")
         end,
 
         AddFailedPlayer = function(self, playerName)
             table.insert(self.failedNames, playerName)
             self.failedCount = self.failedCount + 1 
-            ATC:Debug("Player %s 已完成")
+            ATC:Debug(playerName .. "已完成")
         end
     }
 end
+
+function ATC:AchievementNameFilter(str)
+    if #str == 0 then return str end
+    return string.gsub(str, "^([%z\1-\127\194-\244][\128-\191]*)", "%1.")
+end
+
 -- 初始化插件
 ATC:Init()
 
