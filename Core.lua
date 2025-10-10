@@ -165,6 +165,7 @@ function ATC:QueryTeamAchievement(achievementID, achievementName)
     if self.currentQuery ~= nil then
         self:Debug(string.format("当前成就 %s[%d] 检查中，稍后重试", 
             self.currentQuery.currentAchievementName, self.currentQuery.currentAchievementID))
+        return
     end
 
     ATC:Debug(string.format("QueryTeamAchievement %s[%d]", achievementName, achievementID))
@@ -285,10 +286,21 @@ function ATC:ReportResults(isTimeout)
     local achievementName = ATC:AchievementNameFilter(query.currentAchievementName)
     if query.missingCount == 0 then
         message = string.format("果然[%s(%d)]这么简单的成就，大家都完成了。", achievementName, query.currentAchievementID)
-    else
-        message = string.format("怎么会还有人没有[%s(%d)]? %d/%d 人未完成。", 
-                achievementName, query.currentAchievementID, query.missingCount, query.totalMembers)
+
+    elseif query.completeCount == 0 then
+        message = string.format("哇有这么难吗，团队里竟无人获得成就[%s(%d)]？", achievementName, query.currentAchievementID)
+
+    elseif query.missingCount <= query.completeCount then 
+        message = string.format("怎么会还有人没有成就[%s(%d)]? %d/%d 人未完成。", 
+            achievementName, query.currentAchievementID, query.missingCount, query.totalMembers)
+        messageExt = " 这些萌新是:" .. table.concat(query.missingNames, ",")
+
+    elseif query.missingCount > query.completeCount then 
+        message = string.format("哇太强了！我们队伍里竟然有 %d/%d 人完成了成就[%s(%d)]。", 
+            query.completeCount, query.totalMembers, achievementName, query.currentAchievementID)
+        messageExt = " 这些大佬是:" .. table.concat(query.completeNames, ",")
     end
+
     if query.failedCount > 0 then 
         message = message .. string.format(" (%d人不在查询范围)", query.failedCount)
     end
@@ -301,8 +313,7 @@ function ATC:ReportResults(isTimeout)
     ATC:Debug("ReportResults SendChatMessage " .. chatType)
     SendChatMessage(message, chatType)
 
-    if #query.missingNames > 0 then
-        messageExt = " 这些萌新是: " .. table.concat(query.missingNames, ", ")
+    if messageExt then
         ATC:Debug(messageExt)
         C_Timer.After(self.MESSAGE_DELAY, function()
             SendChatMessage(messageExt, chatType)
@@ -329,10 +340,11 @@ function ATC:CreateQueryState(achievementID, achievementName)
         pendingQueries = {},  -- 待查询的玩家列表 {unit = {name, unit, achievementID}}
         missingNames = {},    -- 未完成成就的玩家名单
         failedNames = {},     -- 查询失败列表
+        completeNames = {},   -- 完成成就的玩家名单
         totalMembers = 0,     -- 总团队成员数
         completeCount = 0,    -- 完成成就的人数
         missingCount = 0,     -- 未完成成就的人数
-        failedCount = 0,
+        failedCount = 0,      -- 查询失败人数
         currentAchievementID = achievementID,
         currentAchievementName = achievementName,
         currentTimeout = nil, -- 当前查询的超时计时器
@@ -349,14 +361,15 @@ function ATC:CreateQueryState(achievementID, achievementName)
         
         -- 添加完成玩家
         AddCompletePlayer = function(self, playerName)
+            table.insert(self.completeNames, playerName)
             self.completeCount = self.completeCount + 1
-            ATC:Debug(playerName .. "查询失败")
+            ATC:Debug(playerName .. "已完成")
         end,
 
         AddFailedPlayer = function(self, playerName)
             table.insert(self.failedNames, playerName)
             self.failedCount = self.failedCount + 1 
-            ATC:Debug(playerName .. "已完成")
+            ATC:Debug(playerName .. "查询失败")
         end
     }
 end
