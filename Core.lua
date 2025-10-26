@@ -3,7 +3,7 @@ local ATC = {
     achievementButtons = {},
     eventFrame = nil,
     isHooked = false,
-    currentQuery = nil,
+    queryState = nil, 
     debug = false,
     MESSAGE_DELAY = 0.5
 }
@@ -34,6 +34,20 @@ function ATC:PLAYER_LOGIN()
     -- end)
 end
 
+
+-- QueryState 构造函数
+function ATC:CreateQueryState(query)
+    return {
+        pendingQueries = {},  -- 待查询的玩家列表 
+        totalMembers = 0,     -- 总团队成员数
+        currentTimeout = nil, -- 当前查询的超时计时器
+        overallTimeout = nil, -- 整体查询的超时计 时器
+        currentUnit = nil,    -- 用于unit超时的判断
+        isQuerying = false,   -- 用于总体超时的判断
+        queryContent = query, 
+    }
+end
+
 -- Hook 成就界面
 function ATC:HookAchievementUI()
     if self.isHooked or not AchievementFrame then
@@ -41,26 +55,33 @@ function ATC:HookAchievementUI()
     end
     
     -- 方法1: 直接Hook成就按钮显示函数
+    local achievementsFrame = AchievementFrame
+    if achievementsFrame then 
+        self:AddOverviewButton(achievementsFrame)
+    else 
+        self.Print("AddOverviewButton Failed")
+    end
+
     if AchievementButton_DisplayAchievement then
         hooksecurefunc("AchievementButton_DisplayAchievement", function(button, category, achievement)
             self:AddQueryButtonToAchievement(button, category, achievement)
         end)
         self.isHooked = true
-        self:Print("成就团队检查插件已加载")
+        self:Print("成就团队检查插件已加载.")
         return
     end
     
-    -- 方法2: 监听成就框架显示事件
-    self.eventFrame:RegisterEvent("ACHIEVEMENT_EARNED")
-    self.eventFrame:SetScript("OnEvent", function(_, event, ...)
-        if event == "ACHIEVEMENT_EARNED" then
-            if AchievementFrame and AchievementFrame:IsVisible() then
-                self:DelayHook()
-            end
-        elseif event == "INSPECT_ACHIEVEMENT_READY" then
-            self:INSPECT_ACHIEVEMENT_READY(...)
-        end
-    end)
+    -- -- 方法2: 监听成就框架显示事件
+    -- self.eventFrame:RegisterEvent("ACHIEVEMENT_EARNED")
+    -- self.eventFrame:SetScript("OnEvent", function(_, event, ...)
+    --     if event == "ACHIEVEMENT_EARNED" then
+    --         if AchievementFrame and AchievementFrame:IsVisible() then
+    --             self:DelayHook()
+    --         end
+    --     elseif event == "INSPECT_ACHIEVEMENT_READY" then
+    --         self:INSPECT_ACHIEVEMENT_READY(...)
+    --     end
+    -- end)
 end
 
 -- 延迟Hook以确保界面完全加载
@@ -71,7 +92,7 @@ function ATC:DelayHook()
                 ATC:AddQueryButtonToAchievement(button, category, achievement)
             end)
             self.isHooked = true
-            self:Print("成就团队检查插件已加载")
+            self:Print("成就团队检查插件已加载 DelayHook")
         end
     end)
 end
@@ -82,6 +103,7 @@ function ATC:AddQueryButtonToAchievement(button, category, achievement)
     
 
     local id, name, _, _, _, _, _, description, _, icon = GetAchievementInfo(category, achievement)
+    -- ATC:Debug(string.format("AddQueryButtonToAchievement name:%s category:%s achievement:%s",name, tostring(category), tostring(achievement)))
     button.description:SetText(description..' ID: '..id)
 
     if not id then return end
@@ -110,9 +132,39 @@ function ATC:AddQueryButtonToAchievement(button, category, achievement)
         button.queryButton = queryButton
     end
     queryButton:SetScript("OnClick", function()
-        ATC:QueryTeamAchievement(id, name)
+        local query = ATC:CreateCompleteQuery(id, name)
+        ATC:QueryTeamAchievement(query)
     end)
     queryButton:Show()
+end
+
+--测试
+function ATC:AddOverviewButton(parentFrame)
+    -- 创建团队检查按钮
+    local overviewButton = CreateFrame("Button", nil, parentFrame, "UIPanelButtonTemplate")
+    overviewButton:SetSize(100, 22)
+    overviewButton:SetText("团队排名")
+    overviewButton:SetFrameStrata("HIGH")
+    overviewButton:SetToplevel(true)
+    overviewButton:SetPoint("TOP", AchievementFrame, "TOP", 25, -10)
+    overviewButton:SetScript("OnClick", function()
+        local query = ATC:CreatePointQuery()
+        ATC:QueryTeamAchievement(query)
+    end)
+    overviewButton:SetNormalFontObject("GameFontNormal")
+    overviewButton:SetHighlightFontObject("GameFontHighlight")
+    -- 悬停提示
+    overviewButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("团队成就检查")
+        GameTooltip:AddLine("快速检查团队成员的成就完成情况", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    
+    overviewButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    overviewButton:Show()
 end
 
 -- 注册成就检查事件
@@ -123,9 +175,9 @@ end
 -- 成就数据就绪事件
 function ATC:INSPECT_ACHIEVEMENT_READY(guid)
     ATC:Debug("INSPECT_ACHIEVEMENT_READY ".. guid)
-    if not self.currentQuery then return end
+    if not self.queryState then return end
 
-    local query = self.currentQuery
+    local query = self.queryState
     local unit = query.currentUnit
     
     if unit and guid == UnitGUID(unit) then
@@ -135,19 +187,8 @@ function ATC:INSPECT_ACHIEVEMENT_READY(guid)
             query.currentTimeout = nil
         end
 
-        local name = GetUnitName(unit, true)
+        query.queryContent:FetchResult(unit)
 
-        ATC:Debug("INSPECT_ACHIEVEMENT_READY GetAchievementComparisonInfo")
-        local isCompleted, _, _, _  = GetAchievementComparisonInfo(query.currentAchievementID)
-        ATC:Debug(string.format("GetAchievementComparisonInfo unit:%s, name:%s id:%d result:%s", unit, name,
-            query.currentAchievementID, tostring(isCompleted)))
-
-        if not isCompleted then
-            query:AddMissingPlayer(name)
-        else
-            query:AddCompletePlayer(name)
-        end
-        
         query.currentUnit = nil
         self:StartNextQuery()
     else
@@ -157,18 +198,17 @@ function ATC:INSPECT_ACHIEVEMENT_READY(guid)
 end
 
 -- 查询团队成就
-function ATC:QueryTeamAchievement(achievementID, achievementName)
+function ATC:QueryTeamAchievement(queryContent)
     if not IsInGroup() and not IsInRaid() then
-        self:Debug("成就团队检查: 你不在团队中！")
+        self:Print("你不在团队中！")
         return
     end
-    if self.currentQuery ~= nil then
-        self:Debug(string.format("当前成就 %s[%d] 检查中，稍后重试", 
-            self.currentQuery.currentAchievementName, self.currentQuery.currentAchievementID))
+    if self.queryState ~= nil then
+        self:Print(string.format("当前成就检查中，稍后重试"))
         return
     end
 
-    ATC:Debug(string.format("QueryTeamAchievement %s[%d]", achievementName, achievementID))
+    ATC:Debug(string.format("QueryTeamAchievement start"))
     -- 重置状态
 
     self:RegisterAchievementEvents()
@@ -176,28 +216,21 @@ function ATC:QueryTeamAchievement(achievementID, achievementName)
     local unitPrefix = IsInRaid() and "raid" or "party"
     local numGroupMembers = GetNumGroupMembers()
     
-    self.currentQuery = ATC:CreateQueryState(achievementID, achievementName)
-    local query = self.currentQuery
+    self.queryState = ATC:CreateQueryState(queryContent)
+    local query = self.queryState
     query.totalMembers = numGroupMembers
     
     -- 检查自己
+    query.queryContent:QueryForPlayer()
 
-    local selfCompleted = select(13, GetAchievementInfo(achievementID))
-
-    if not selfCompleted then
-        query:AddMissingPlayer(GetUnitName("player", true))
-    else
-        query:AddCompletePlayer(GetUnitName("player", true))
-    end
-    
-    -- 构建待查询列表
+    -- 构建待查询列表 
     for i = 1, numGroupMembers do
         local unit = unitPrefix .. i
         if UnitExists(unit) and not UnitIsUnit(unit, "player") then
             table.insert(query.pendingQueries, unit)
         end
     end
-    -- ATC:Debug("QueryTeamAchievement  pendingQueries count :"..tostring(#(self.currentQuery.pendingQueries)))
+    -- ATC:Debug("QueryTeamAchievement  pendingQueries count :"..tostring(#(self.queryState.pendingQueries)))
 
     if #query.pendingQueries <= 0 then
         -- 没有其他玩家需要查询，直接报告结果
@@ -220,7 +253,7 @@ end
 -- 开始下一个查询
 function ATC:StartNextQuery()
     ATC:Debug("StartNextQuery")
-    local query = self.currentQuery
+    local query = self.queryState
     ClearAchievementComparisonUnit()
     
     if #query.pendingQueries == 0 then
@@ -244,7 +277,7 @@ function ATC:StartNextQuery()
             if query.currentUnit == unit then
                 ATC:Debug(string.format("查询超时: %s", unit))
                 local name = GetUnitName(unit, true)
-                query:AddFailedPlayer(name .. ":超时")
+                query:OnQueryFailed(name .. ":超时")
                 query.currentUnit = nil
                 query.currentTimeout = nil
                 self:StartNextQuery()
@@ -253,7 +286,7 @@ function ATC:StartNextQuery()
     else
         -- 设置失败，直接视为未完成
         local name = GetUnitName(unit, true)
-        query:AddFailedPlayer(name .. ":失败")
+        query:OnQueryFailed(name .. ":失败")
         query.currentUnit = nil
         self:StartNextQuery()
     end
@@ -263,9 +296,9 @@ end
 -- 报告结果
 function ATC:ReportResults(isTimeout)
     ATC:Debug("ReportResults")
-    if not self.currentQuery then return end
+    if not self.queryState then return end
     
-   local query = self.currentQuery
+   local query = self.queryState
     
     -- 清理状态
     if query.currentTimeout then
@@ -281,45 +314,29 @@ function ATC:ReportResults(isTimeout)
     query.isQuerying = false
     query.currentUnit = nil
 
-    local message, messageExt
-
-    local achievementName = ATC:AchievementNameFilter(query.currentAchievementName)
-    if query.missingCount == 0 then
-        message = string.format("果然[%s(%d)]这么简单的成就，大家都完成了。", achievementName, query.currentAchievementID)
-
-    elseif query.completeCount == 0 then
-        message = string.format("哇有这么难吗，团队里竟无人获得成就[%s(%d)]？", achievementName, query.currentAchievementID)
-
-    elseif query.missingCount <= query.completeCount then 
-        message = string.format("怎么会还有人没有成就[%s(%d)]? %d/%d 人未完成。", 
-            achievementName, query.currentAchievementID, query.missingCount, query.totalMembers)
-        messageExt = " 这些萌新是:" .. table.concat(query.missingNames, ",")
-
-    elseif query.missingCount > query.completeCount then 
-        message = string.format("哇太强了！我们队伍里竟然有 %d/%d 人完成了成就[%s(%d)]。", 
-            query.completeCount, query.totalMembers, achievementName, query.currentAchievementID)
-        messageExt = " 这些大佬是:" .. table.concat(query.completeNames, ",")
-    end
-
-    if query.failedCount > 0 then 
-        message = message .. string.format(" (%d人不在查询范围)", query.failedCount)
-    end
+    self.queryState = nil
     
-    self.currentQuery = nil
-
-    ATC:Debug(message)
+    local messages = query.queryContent:GetReport()
+    ATC:Debug(tostring(messages))
 
     local chatType = IsInRaid() and "RAID" or "PARTY"
-    ATC:Debug("ReportResults SendChatMessage " .. chatType)
-    SendChatMessage(message, chatType)
 
-    if messageExt then
-        ATC:Debug(messageExt)
-        C_Timer.After(self.MESSAGE_DELAY, function()
-            SendChatMessage(messageExt, chatType)
+    for i, message in ipairs(messages) do
+        C_Timer.After((i-1) * self.MESSAGE_DELAY, function()
+            self:SafeSendChatMessage(message, chatType)
         end)
     end
 
+end
+
+function ATC:SafeSendChatMessage(message, chatType)
+    local success, err = pcall(SendChatMessage, message, chatType)
+    if not success then
+        self:Print("消息发送失败: " .. tostring(err)) 
+        self:Print("(团队消息) " .. message)
+        return false
+    end
+    return true
 end
 
 -- 打印消息
@@ -332,52 +349,7 @@ end
 -- 打印消息
 function ATC:Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00成就团队检查|r: " .. msg)
-end
-
--- QueryState 构造函数
-function ATC:CreateQueryState(achievementID, achievementName)
-    return {
-        pendingQueries = {},  -- 待查询的玩家列表 {unit = {name, unit, achievementID}}
-        missingNames = {},    -- 未完成成就的玩家名单
-        failedNames = {},     -- 查询失败列表
-        completeNames = {},   -- 完成成就的玩家名单
-        totalMembers = 0,     -- 总团队成员数
-        completeCount = 0,    -- 完成成就的人数
-        missingCount = 0,     -- 未完成成就的人数
-        failedCount = 0,      -- 查询失败人数
-        currentAchievementID = achievementID,
-        currentAchievementName = achievementName,
-        currentTimeout = nil, -- 当前查询的超时计时器
-        overallTimeout = nil, -- 整体查询的超时计时器
-        currentUnit = nil,    -- 用于unit超时的判断
-        isQuerying = false,   -- 用于总体超时的判断
-        
-        -- 添加缺失玩家
-        AddMissingPlayer = function(self, playerName)
-            table.insert(self.missingNames, playerName)
-            self.missingCount = self.missingCount + 1
-            ATC:Debug(playerName .. " 未完成")
-        end,
-        
-        -- 添加完成玩家
-        AddCompletePlayer = function(self, playerName)
-            table.insert(self.completeNames, playerName)
-            self.completeCount = self.completeCount + 1
-            ATC:Debug(playerName .. "已完成")
-        end,
-
-        AddFailedPlayer = function(self, playerName)
-            table.insert(self.failedNames, playerName)
-            self.failedCount = self.failedCount + 1 
-            ATC:Debug(playerName .. "查询失败")
-        end
-    }
-end
-
-function ATC:AchievementNameFilter(str)
-    if #str == 0 then return str end
-    return string.gsub(str, "^([%z\1-\127\194-\244][\128-\191]*)", "%1.")
-end
+end  
 
 -- 初始化插件
 ATC:Init()
