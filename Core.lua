@@ -103,7 +103,7 @@ function ATC:AddQueryButtonToAchievement(button, category, achievement)
     
 
     local id, name, _, _, _, _, _, description, _, icon = GetAchievementInfo(category, achievement)
-    -- ATC:Debug(string.format("AddQueryButtonToAchievement name:%s category:%s achievement:%s",name, tostring(category), tostring(achievement)))
+    ATC:Debug(string.format("AddQueryButtonToAchievement name:%s category:%s achievement:%s",name, tostring(category), tostring(achievement)))
     button.description:SetText(description..' ID: '..id)
 
     if not id then return end
@@ -141,30 +141,54 @@ end
 --测试
 function ATC:AddOverviewButton(parentFrame)
     -- 创建团队检查按钮
-    local overviewButton = CreateFrame("Button", nil, parentFrame, "UIPanelButtonTemplate")
-    overviewButton:SetSize(100, 22)
-    overviewButton:SetText("团队排名")
-    overviewButton:SetFrameStrata("HIGH")
-    overviewButton:SetToplevel(true)
-    overviewButton:SetPoint("TOP", AchievementFrame, "TOP", 25, -10)
-    overviewButton:SetScript("OnClick", function()
+    local pointsButton = CreateFrame("Button", nil, parentFrame, "UIPanelButtonTemplate")
+    pointsButton:SetSize(80, 22)
+    pointsButton:SetText("点数排名")
+    pointsButton:SetFrameStrata("HIGH")
+    pointsButton:SetToplevel(true)
+    pointsButton:SetPoint("TOP", AchievementFrame, "TOP", -15, -10)
+    pointsButton:SetScript("OnClick", function()
         local query = ATC:CreatePointQuery()
         ATC:QueryTeamAchievement(query)
     end)
-    overviewButton:SetNormalFontObject("GameFontNormal")
-    overviewButton:SetHighlightFontObject("GameFontHighlight")
-    -- 悬停提示
-    overviewButton:SetScript("OnEnter", function(self)
+    pointsButton:SetNormalFontObject("GameFontNormal")
+    pointsButton:SetHighlightFontObject("GameFontHighlight")
+    pointsButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("团队成就检查")
-        GameTooltip:AddLine("快速检查团队成员的成就完成情况", 1, 1, 1, true)
+        GameTooltip:SetText("成就点数排名")
+        GameTooltip:AddLine("检查团队中所有人的成就点数并通报排名", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     
-    overviewButton:SetScript("OnLeave", function()
+    pointsButton:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-    overviewButton:Show()
+    pointsButton:Show()
+
+    local featButton = CreateFrame("Button", nil, parentFrame, "UIPanelButtonTemplate")
+    featButton:SetSize(80, 22)
+    featButton:SetText("光辉排名")
+    featButton:SetFrameStrata("HIGH")
+    featButton:SetToplevel(true)
+    featButton:SetPoint("LEFT", pointsButton, "RIGHT", 0, 0) -- 放在点数按钮右边
+    featButton:SetScript("OnClick", function()
+        local query = ATC:CreateFeatQuery()
+        ATC:QueryTeamAchievement(query)
+    end)
+    featButton:SetNormalFontObject("GameFontNormal")
+    featButton:SetHighlightFontObject("GameFontHighlight")
+    featButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("光辉事迹排名")
+        GameTooltip:AddLine("检查团队中所有人的光辉事迹数量并通报排名", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    
+    featButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    featButton:Show()
+
 end
 
 -- 注册成就检查事件

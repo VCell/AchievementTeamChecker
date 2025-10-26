@@ -179,17 +179,86 @@ function ATC:CreatePointQuery(id, name)
                 if self.failedCount > 0 then
                     table.insert(messages, string.format("(%d人查询失败)", self.failedCount))
                 end
-                
-                -- 添加幽默评论
+
                 local comments = {
-                    "看看这些肝帝，都不用睡觉的吗？",
-                    "建议点数低的同学多向大佬学习！",
-                    "这排名，卷死了卷死了！",
-                    "成就点数能当饭吃吗？好吧确实能...",
-                    "你们是来玩游戏的还是来上班的？",
-                    "建议暴雪给第一名发个'不睡觉奖'",
-                    "看到这个排名，我默默关掉了游戏...",
-                    "这些点数，得熬了多少个夜啊！"
+                    "看来，人与人的差距，真的很大。"
+                }
+                table.insert(messages, comments[math.random(1, #comments)])
+            else
+                table.insert(messages, "暂无成就点数数据，可能大家都太低调了～")
+            end
+            
+            return messages
+        end,
+
+    }
+end
+
+-- 构建查询成就点数，并通报成就点排名的queryContent
+function ATC:CreateFeatQuery(id, name)
+    return {
+        points = {}, -- name-point的map
+        failedCount = 0,      -- 查询失败人数
+
+        QueryForPlayer = function(self) 
+            ATC:Debug("QueryForPlayer start" )
+            local _,complete,_ = GetCategoryNumAchievements(81)
+            local name = GetUnitName("player", true)
+            self.points[name] = complete
+        end,
+
+        OnQueryFailed = function(self, name)
+            self.failedCount = self.failedCount + 1
+        end, 
+
+        FetchResult = function(self, unit)
+            ATC:Debug("FetchResult start")
+            local point = GetComparisonCategoryNumAchievements(81)
+            local name = GetUnitName(unit, true)
+            ATC:Debug(string.format("GetNumComparisonCompletedAchievements unit:%s, %d", unit, point))
+
+            self.points[name] = point
+        end,
+
+        GetReport = function(self)
+            ATC:Debug("GetReport start")
+            
+            -- 将点数数据转换为可排序的数组
+            local ranking = {}
+            for name, points in pairs(self.points) do
+                table.insert(ranking, {
+                    name = name,
+                    points = points or 0
+                })
+            end
+            
+            -- 按点数降序排序
+            table.sort(ranking, function(a, b)
+                return a.points > b.points
+            end)
+            
+            -- 生成排名消息
+            local messages = {}
+            
+            if #ranking > 0 then
+                -- 标题行
+                table.insert(messages, "光辉事迹数量排名：")
+                
+                -- 排名内容
+                for i, player in ipairs(ranking) do
+                    if i <= 10 then -- 最多显示前10名
+                        local rankText = string.format("%d. %s - %d", i, player.name, player.points)
+                        table.insert(messages, rankText)
+                    end
+                end
+                
+                -- 添加失败人数信息
+                if self.failedCount > 0 then
+                    table.insert(messages, string.format("(%d人查询失败)", self.failedCount))
+                end
+
+                local comments = {
+                    "看来，人与人的差距，真的很大。"
                 }
                 table.insert(messages, comments[math.random(1, #comments)])
             else
