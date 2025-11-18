@@ -26,7 +26,7 @@ function ATC:CreateCompleteQuery(id, name)
         end,
 
         OnQueryFailed = function(self, name)
-            self.addFailedPlayer(name)
+            self:addFailedPlayer(name)
         end, 
 
         FetchResult = function(self, unit)
@@ -215,7 +215,7 @@ function ATC:CreateFeatQuery(id, name)
             ATC:Debug("FetchResult start")
             local point = GetComparisonCategoryNumAchievements(81)
             local name = GetUnitName(unit, true)
-            ATC:Debug(string.format("GetNumComparisonCompletedAchievements unit:%s, %d", unit, point))
+            ATC:Debug(string.format("GetComparisonCategoryNumAchievements unit:%s, %d", unit, point))
 
             self.points[name] = point
         end,

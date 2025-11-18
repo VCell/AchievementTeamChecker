@@ -114,8 +114,9 @@ function ATC:AddQueryButtonToAchievement(button, category, achievement)
         queryButton = CreateFrame("Button", nil, button, "UIPanelButtonTemplate")
         queryButton:SetSize(80, 22)
         queryButton:SetText("团队查询")
-        queryButton:SetPoint("TOPRIGHT", button, "TOPRIGHT", -5, -5)
+        queryButton:SetPoint("TOPRIGHT", button, "TOPRIGHT", -75, -5)
         queryButton:SetFrameLevel(button:GetFrameLevel() + 1)
+        queryButton:SetToplevel(true)
         
         -- 悬停提示
         queryButton:SetScript("OnEnter", function(self)
@@ -301,7 +302,7 @@ function ATC:StartNextQuery()
             if query.currentUnit == unit then
                 ATC:Debug(string.format("查询超时: %s", unit))
                 local name = GetUnitName(unit, true)
-                query:OnQueryFailed(name .. ":超时")
+                query.queryContent:OnQueryFailed(name .. ":超时")
                 query.currentUnit = nil
                 query.currentTimeout = nil
                 self:StartNextQuery()
@@ -310,7 +311,7 @@ function ATC:StartNextQuery()
     else
         -- 设置失败，直接视为未完成
         local name = GetUnitName(unit, true)
-        query:OnQueryFailed(name .. ":失败")
+        query.queryContent:OnQueryFailed(name .. ":失败")
         query.currentUnit = nil
         self:StartNextQuery()
     end
